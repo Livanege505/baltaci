@@ -93,7 +93,7 @@
         { "who": "kemal", "text": "x15... Gözlerim mi yanıldı? Hoca, söyle, yanıldım mı?" },
         { "who": "hoca", "text": "Hayır Kemal. Ben de saydım. İki kere." },
         { "who": "kemal", "text": "Pekâlâ, pekâlâ! Kabul. Sen benden iyi oduncusun. Bu orman... ikimizin." },
-        { "who": "kemal", "text": "Al şunu. Bodo'nun eski haritasından bir parça, yıllardır yastığımın altında. Bir de bahis ödülü: 400 altın." },
+        { "who": "kemal", "text": "Al şunu. Bodo'nun eski haritasından bir parça, yıllardır yastığımın altında. Bir de bahis ödülü: 400 altın.", "show": "story/map_piece" },
         { "who": "pipsy", "text": "(Pipsy haritayı patisine alıp Kemal'e sarılıyor. Kemal 'tamam, yeter' diyor ama ayrılmıyor.)", "emote": "happy" },
         { "who": "kemal", "text": "Bandanayı yemiyorum ama, o şart sayılmaz. Hoca, gülme!" }
       ]
@@ -104,7 +104,7 @@
       "once": true,
       "toast": { "who": "pipsy", "text": "(Harita parçası cebinde titriyor. Önde bir tabela var!)", "emote": "wow" },
       "lines": [
-        { "who": "pipsy", "text": "(Harita parçası titriyor. Pipsy'nin önünde yosun tutmuş eski bir tabela duruyor.)", "emote": "wow" },
+        { "who": "pipsy", "text": "(Harita parçası titriyor. Pipsy'nin önünde yosun tutmuş eski bir tabela duruyor.)", "emote": "wow", "show": "story/map_piece" },
         { "who": "hoca", "text": "Haritadaki işaret tam burası! Tabelada ne yazıyor, oku bakalım." },
         { "who": "hoca", "text": "'Altın Meşe'ye: Gölgeli Patika.' Altında küçük harflerle: 'Bodo buradaydı. Ekmek bırakmayın, sincaplar yiyor.'" },
         { "who": "hoca", "text": "Patika ormanın daha derinine iniyor. Yeni ağaçlar, yeni belalar... ama önce bir nefes al." },

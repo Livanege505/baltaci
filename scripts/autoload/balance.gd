@@ -2,6 +2,8 @@ extends Node
 ## Read-only game data loaded from res://data/*.json.
 ## Pure helpers here take levels as arguments so they can be unit tested without GameState.
 
+const MAX_LOG_COUNT := 2000000000   # storage safety limit, not a gameplay balance value
+
 var trees: Dictionary = {}        # id -> tree def
 var tree_order: Array = []
 var spawn_rules: Array = []
@@ -41,7 +43,7 @@ func upgrade_cost(id: String, level: int) -> float:
 	var u := get_upgrade(id)
 	if u.is_empty():
 		return INF
-	return round(float(u.base_cost) * pow(float(u.growth), level))
+	return round(float(u.base_cost) * pow(float(u.growth), maxi(0, level)))
 
 
 func is_maxed(id: String, level: int) -> bool:
@@ -102,12 +104,28 @@ func _weight_at(points: Array, col: int) -> float:
 ## Run payout. `logs` = {tree_id: count}. Returns {sales, chain_bonus, total}.
 func run_payout(logs: Dictionary, longest_chain: int) -> Dictionary:
 	var sales := 0.0
-	for id in logs:
-		sales += float(logs[id]) * float(trees.get(id, {}).get("log_value", 0))
+	var valid_logs := sanitize_logs(logs)
+	for id in valid_logs:
+		sales += float(valid_logs[id]) * float(trees[id].get("log_value", 0))
 	var links: int = max(0, longest_chain - 1)
 	var rate: float = minf(float(links) * float(base_stats.get("chain_bonus_per_link", 0.0)), chain_bonus_max)
 	var bonus := sales * rate
 	return {"sales": sales, "chain_bonus": round(bonus), "total": sales + round(bonus)}
+
+
+## Only whole, positive logs of known tree types can be sold or shown in a result.
+func sanitize_logs(logs: Dictionary) -> Dictionary:
+	var out := {}
+	for id in logs:
+		if not trees.has(id):
+			continue
+		var count = logs[id]
+		if (typeof(count) != TYPE_INT and typeof(count) != TYPE_FLOAT) or not is_finite(float(count)):
+			continue
+		var whole := int(clampf(float(count), 0.0, float(MAX_LOG_COUNT)))
+		if whole > 0:
+			out[id] = whole
+	return out
 
 
 func _load_json(path: String) -> Dictionary:

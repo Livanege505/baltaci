@@ -19,7 +19,7 @@ func _initialize() -> void:
 	var G := root.get_node("GameState")
 	_redirect_save(G)
 
-	# Fixed stats so expectations are independent of any save: kavak 260 px * 0.23 = 59.8 fall damage.
+	# Fixed stats so expectations are independent of any save: kavak 260 px * 0.215 = 55.9 fall damage.
 	G.from_dict({"levels": {"fall_power": 15}})
 
 	# (1) fall range: x = 1000, height 260, dir +1 -> roots in (1000, 1260].
@@ -132,7 +132,7 @@ func _initialize() -> void:
 	_free(f)
 
 	# (6) REGRESSION: logs and chain agree when the run ends right after the first strike.
-	# 12 kavak 80 px apart, fall_power lv15 (59.8 dmg) -> one chain of 12.
+	# 12 kavak 80 px apart, fall_power lv15 (55.9 dmg) -> one chain of 12.
 	G.from_dict({"levels": {"fall_power": 15}})
 	f = _new_forest()
 	for i in 12:

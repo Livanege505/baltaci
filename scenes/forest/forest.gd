@@ -14,6 +14,7 @@ const ForestFx := preload("res://scenes/forest/forest_fx.gd")
 const Fmt := preload("res://scenes/ui/fmt.gd")
 const Juice := preload("res://scenes/ui/juice.gd")
 const SceneTransition := preload("res://scenes/ui/scene_transition.gd")
+const SettingsPanel := preload("res://scenes/ui/settings_panel.gd")
 
 const VIEW_SIZE := Vector2(1600, 900)
 const CAMP_SCENE := "res://scenes/camp/camp.tscn"
@@ -104,6 +105,14 @@ var _auto_target: Node2D
 var _real_time: float = 0.0
 var _shot_taken: bool = false
 var _autoend_given: bool = false
+var _pause_layer: CanvasLayer
+var _pause_menu: Control
+var chapter_mode := false
+var chapter_id := ""
+var chapter_def: Dictionary = {}
+var chapter_cleared: Dictionary = {}
+var chapter_replay := false
+var _chapter_cam_limit := 0.0
 # --autoshot-seq: a short frame sequence (for judging smoothness), see _seq_run().
 var _shot_wait: float = 2.4          # results screenshot waits for the reveal animation (--autoshot-wait=)
 var _seq_dir: String = ""
@@ -128,14 +137,22 @@ func _ready() -> void:
 	_next_x = first_tree_x
 	_build_layers()
 	if not manual_mode:
+		var chosen := GameState.selected_chapter
+		for arg in OS.get_cmdline_user_args():
+			if _autoplay and arg.begins_with("--chapter=") and not Chapters.get_chapter(arg.substr(10)).is_empty():
+				chosen = arg.substr(10)
+		begin_chapter(chosen)
+		Sound.set_ambience(true)
 		ensure_forest(first_tree_x + VIEW_SIZE.x)
-		_hud.show_banner("Başla!")
+		_hud.show_banner(str(chapter_def.get("name", "Başla!")))
 		if not _autoplay:
 			Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	set_process(not manual_mode)
 
 
 func _exit_tree() -> void:
+	if _pause_menu != null and _pause_menu.visible:
+		get_tree().paused = false
 	if Input.mouse_mode == Input.MOUSE_MODE_HIDDEN:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
@@ -223,6 +240,7 @@ func _build_layers() -> void:
 	add_child(_hud)
 	_hud.paydos_pressed.connect(end_run)
 	_hud.camp_pressed.connect(_go_camp)
+	_hud.next_chapter_pressed.connect(_go_next_chapter)
 	_hud.results_revealed.connect(_on_results_revealed)
 
 	var axe_layer := CanvasLayer.new()
@@ -236,9 +254,50 @@ func _build_layers() -> void:
 	axe_layer.add_child(_axe)
 	_axe.impact.connect(_on_axe_impact)
 	_axe.visible = not manual_mode
+	_pause_layer = CanvasLayer.new()
+	_pause_layer.layer = 60
+	_pause_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(_pause_layer)
+	_pause_menu = SettingsPanel.new()
+	_pause_menu.in_run = true
+	_pause_menu.visible = false
+	_pause_menu.closed.connect(func() -> void: set_paused(false))
+	_pause_layer.add_child(_pause_menu)
 
 
 # --- forest construction ---------------------------------------------------------
+
+func begin_chapter(id: String, saved_slots: Variant = null) -> void:
+	chapter_def = Chapters.get_chapter(id)
+	if chapter_def.is_empty():
+		return
+	chapter_mode = true
+	chapter_id = id
+	_backdrop.modulate = Color.from_string(str(chapter_def.get("sky_tint", "#ffffff")), Color.WHITE)
+	chapter_replay = Chapters.is_complete(id, GameState.chapter_progress)
+	var slots: Array = Chapters.sanitize_slots(id, GameState.chapter_progress.get(id, []) if saved_slots == null else saved_slots)
+	chapter_cleared.clear()
+	if not chapter_replay:
+		for slot in slots:
+			chapter_cleared[slot] = true
+	_gen_rng.seed = int(chapter_def.seed)
+	ensure_forest(INF)
+	if not trees.is_empty():
+		_chapter_cam_limit = maxf(0.0, trees[-1].position.x - VIEW_SIZE.x * 0.65)
+		for tree in trees:
+			if tree.is_standing():
+				cam_x = clampf(tree.position.x - first_tree_x, 0.0, _chapter_cam_limit)
+				break
+	_update_chapter_hud()
+
+
+func _update_chapter_hud() -> void:
+	if chapter_mode:
+		_hud.set_chapter(chapter_id, chapter_cleared.size(), chapter_replay)
+
+
+func _chapter_result() -> Dictionary:
+	return {"id": chapter_id, "cleared": chapter_cleared.keys(), "replay": chapter_replay} if chapter_mode else {}
 
 ## Endless forest: generates columns left to right until world x `to_x` is covered.
 ## Column index (depth) drives the tree mix through Balance.pick_tree.
@@ -246,15 +305,14 @@ func ensure_forest(to_x: float) -> void:
 	var s_min := float(Balance.forest.get("spacing_min", 70))
 	var s_max := float(Balance.forest.get("spacing_max", 115))
 	while _next_x <= to_x:
-		add_tree(Balance.pick_tree(_next_col, _gen_rng), _next_x, _gen_rng)
+		if chapter_mode and _next_col >= int(chapter_def.tree_count):
+			break
+		var tree := add_tree(Chapters.pick_tree(chapter_id, _next_col) if chapter_mode else Balance.pick_tree(_next_col, _gen_rng), _next_x, _gen_rng)
+		if chapter_mode and chapter_cleared.has(_next_col):
+			tree.restore_stump()
+			_standing -= 1
 		_next_col += 1
 		_next_x += _gen_rng.randf_range(s_min, s_max)
-	if story_enabled:
-		var col := _next_col - int(Balance.forest.get("buffer_columns", 14))
-		if col > _story_col:
-			_story_col = col
-			GameState.note_depth(col)
-			Story.notify("depth", {"col": col})
 
 
 ## World x up to which the forest must exist when something is happening at `wx`.
@@ -272,12 +330,13 @@ func add_tree(id: String, x: float, rng: RandomNumberGenerator = null) -> Node2D
 		rng = _rng
 	var t: Node2D = ForestTree.new()
 	t.setup(id, x, _ground_y, rng)
+	t.set_meta("column", _next_col)
+	if chapter_mode:
+		t.set_meta("chapter_slot", _next_col)
+		t.set_meta("column", int(chapter_def.depth_start) + _next_col)
 	_world.add_child(t)
 	trees.append(t)
 	_standing += 1
-	if story_enabled and not _story_trees.has(id):
-		_story_trees[id] = true
-		Story.notify("tree_first_seen", {"tree": id})
 	return t
 
 
@@ -288,6 +347,8 @@ func standing_count() -> int:
 # --- frame loop ------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	if get_tree().paused:
+		return
 	_real_time += delta
 	_seq_acc += delta
 	# Local time scale: hit-stop slows the simulation (axe, trees, particles) but never the
@@ -299,30 +360,43 @@ func _process(delta: float) -> void:
 	if _autoplay:
 		_update_autoplay(delta)
 	_update_camera(delta)
-	ensure_forest(forest_ahead_of(cam_x + VIEW_SIZE.x))
+	if phase == Phase.RUNNING:
+		ensure_forest(forest_ahead_of(cam_x + VIEW_SIZE.x))
 	_cull_cd -= delta
 	if _cull_cd <= 0.0:
 		_cull_cd = 0.5
 		_cull_behind()
 	_axe.target = cursor_screen()
-	_axe.tick(sdt)
-	advance(sdt)
+	var pointer_active := can_aim()
+	_axe.visible = phase == Phase.RUNNING and pointer_active and not manual_mode
+	if not manual_mode and not _autoplay:
+		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN if _axe.visible else Input.MOUSE_MODE_VISIBLE
+	_axe.tick(sdt, delta)
+	advance(sdt, delta)
 	_fx.tick(sdt)
 	_backdrop.set_cam(cam_x, _shake_off)
 	var gold: float = Balance.run_payout(logs, longest_chain).total
 	if phase != Phase.DONE:
 		_hud.set_values(time_left, gold, current_chain)
+		var aim := cursor_screen() + Vector2(cam_x, 0) - _shake_off
+		var target := find_tree_at(aim.x, aim.y) if pointer_active else null
+		_hud.set_target(target, aim.x)
+	_update_chapter_hud()
 	_check_autoshot()
 	if _seq_dir != "" and not _seq_started and _seq_trigger == "time" and _real_time >= _autoshot_at:
 		_seq_start()
 
 
 ## Advances the whole simulation by dt seconds (timers, swings, falls, shake).
-func advance(dt: float) -> void:
+func advance(dt: float, clock_dt: float = -1.0) -> void:
+	if get_tree().paused:
+		return
+	if clock_dt < 0.0:
+		clock_dt = dt
 	if phase == Phase.RUNNING:
-		elapsed += dt
-		time_left = maxf(0.0, time_left - dt)
-		if swing_enabled:
+		elapsed += minf(clock_dt, time_left)
+		time_left = maxf(0.0, time_left - clock_dt)
+		if swing_enabled and (manual_mode or can_aim()) and (bool(Settings.value("auto_chop")) or _autoplay or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)):
 			_swing_cd -= dt
 			if _swing_cd <= 0.0:
 				_swing_cd += GameState.stat("swing_interval")
@@ -355,17 +429,19 @@ func advance(dt: float) -> void:
 		else:
 			ai += 1
 	if phase == Phase.ENDING:
-		_end_timer += dt
+		_end_timer += clock_dt
 		var falling := false
 		for t in _active:
 			if t.state == ForestTree.State.FALLING:
 				falling = true
 		if not falling or _end_timer >= max_end_wait:
 			_complete()
+	elif phase == Phase.RUNNING and chapter_mode and chapter_cleared.size() >= int(chapter_def.tree_count):
+		end_run()
 	# Trauma shake: offset = trauma^2 * smooth noise, trauma decays linearly. No random jitter.
 	_trauma = maxf(0.0, _trauma - trauma_decay * dt)
 	_shake_t += dt
-	if _trauma > 0.0:
+	if _trauma > 0.0 and bool(Settings.value("screen_shake")):
 		var amt := _trauma * _trauma * shake_max_px * 1.7
 		_shake_off = Vector2(_noise.get_noise_2d(_shake_t * 26.0, 0.0), _noise.get_noise_2d(_shake_t * 26.0, 57.0)) * amt
 	else:
@@ -379,6 +455,53 @@ func cursor_screen() -> Vector2:
 	return get_viewport().get_mouse_position()
 
 
+func can_aim() -> bool:
+	if manual_mode or _autoplay:
+		return true
+	var m := cursor_screen()
+	if not Rect2(Vector2.ZERO, VIEW_SIZE).has_point(m) or m.y < 170.0:
+		return false
+	var hovered := get_viewport().gui_get_hovered_control()
+	while hovered != null:
+		if hovered is BaseButton and hovered.is_visible_in_tree():
+			return false
+		hovered = hovered.get_parent_control()
+	return not get_tree().paused
+
+
+func set_paused(on: bool) -> void:
+	if manual_mode or _autoplay or phase == Phase.DONE:
+		return
+	if on and not _pause_menu.visible:
+		Sound.play("close")
+	_pause_menu.visible = on
+	get_tree().paused = on
+	if on:
+		_axe.visible = false
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	else:
+		# Resume without finishing a hit at an old pointer location.
+		_axe.stop()
+		_swing_cd = GameState.stat("swing_interval")
+		_axe.position = cursor_screen()
+		_axe.target = _axe.position
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		set_paused(true)
+		get_viewport().set_input_as_handled()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and chapter_mode and not _autoplay and phase != Phase.DONE:
+		# Window close keeps already-landed trees and their gold in the same checkpoint.
+		_axe.stop()
+		_complete()
+	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT and _pause_menu != null:
+		set_paused(true)
+
+
 func _update_camera(delta: float) -> void:
 	if manual_mode:
 		return
@@ -386,7 +509,7 @@ func _update_camera(delta: float) -> void:
 	var m := cursor_screen()
 	if not _autoplay and phase == Phase.RUNNING:
 		# Edge scrolling needs the pointer inside the window; the keyboard always works.
-		if Rect2(Vector2.ZERO, VIEW_SIZE).has_point(m):
+		if bool(Settings.value("edge_scroll")) and Rect2(Vector2(0, 170), Vector2(VIEW_SIZE.x, _ground_y - 170)).has_point(m):
 			if m.x > VIEW_SIZE.x - edge_zone:
 				dir = (m.x - (VIEW_SIZE.x - edge_zone)) / edge_zone
 			elif m.x < edge_zone:
@@ -395,8 +518,8 @@ func _update_camera(delta: float) -> void:
 			dir = 1.0
 		elif Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
 			dir = -1.0
-	cam_x = maxf(0.0, cam_x + dir * scroll_speed * delta)
-	if dir == 0.0 and not _autoplay and phase == Phase.RUNNING:
+	cam_x = maxf(0.0, cam_x + dir * scroll_speed * float(Settings.value("scroll_speed")) * delta)
+	if dir == 0.0 and bool(Settings.value("auto_follow")) and not _autoplay and phase == Phase.RUNNING:
 		# Auto-follow: when the leftmost standing tree in reach sits right of the left third,
 		# the tree line has moved on without the camera -> nudge right (never left).
 		var lead := INF
@@ -407,10 +530,14 @@ func _update_camera(delta: float) -> void:
 		var excess := lead - cam_x - VIEW_SIZE.x / 3.0
 		if excess > 0.0 and lead < INF:
 			cam_x += minf(excess, follow_speed * delta)
+	if chapter_mode:
+		cam_x = clampf(cam_x, 0.0, _chapter_cam_limit)
 
 
 ## Frees trees (standing or stump) far behind the camera so the endless forest stays cheap.
 func _cull_behind() -> void:
+	if chapter_mode:
+		return   # finite maps retain their stumps and every uncleared tree
 	var limit := cam_x - cull_margin
 	var keep: Array = []
 	for t in trees:
@@ -429,22 +556,25 @@ func _cull_behind() -> void:
 # --- hitting ---------------------------------------------------------------------
 
 func _on_axe_impact() -> void:
-	if phase != Phase.RUNNING:
+	if phase != Phase.RUNNING or not can_aim():
 		return
-	strike_at(cursor_screen())
+	_axe.position = cursor_screen()
+	if strike_at(cursor_screen()) == null:
+		Sound.play("swing")
 
 
 ## Chops whatever standing tree lies under `screen` (viewport coordinates). Returns it or null.
 func strike_at(screen: Vector2) -> Node2D:
-	var wx := screen.x + cam_x
-	var target := find_tree_at(wx, screen.y)
+	var wx := screen.x + cam_x - _shake_off.x
+	var wy := screen.y - _shake_off.y
+	var target := find_tree_at(wx, wy)
 	if target == null:
 		return null
 	var crit := _rng.randf() < GameState.stat("crit_chance")
 	var dmg := GameState.stat("axe_damage") * power_mult
 	if crit:
 		dmg *= GameState.stat("crit_multiplier")
-	hit_tree(target, wx, screen.y, dmg, crit)
+	hit_tree(target, wx, wy, dmg, crit)
 	return target
 
 
@@ -466,8 +596,18 @@ func find_tree_at(wx: float, y: float) -> Node2D:
 
 
 func hit_tree(t: Node2D, hit_wx: float, hit_y: float, dmg: float, crit: bool) -> void:
+	if story_enabled:
+		var col := int(t.get_meta("column", 0)) + 1
+		if col > _story_col:
+			_story_col = col
+			GameState.note_depth(col)
+			Story.notify("depth", {"col": col})
+		if not _story_trees.has(t.tree_id):
+			_story_trees[t.tree_id] = true
+			Story.notify("tree_first_seen", {"tree": t.tree_id})
 	var dir := fall_dir_for(hit_wx, t.position.x)
 	var dead: bool = t.take_damage(dmg, -dir)
+	Sound.play("crit" if crit else "hit")
 	_fx.number(Vector2(hit_wx, hit_y - 30.0), ("%d!" % int(round(dmg))) if crit else str(int(round(dmg))), 1 if crit else 0)
 	_fx.chips(Vector2(hit_wx, hit_y), -dir, chips_per_hit + (4 if crit else 0))
 	_fx.leaves(t.position + Vector2(0.0, -t.tree_height * 0.78), t.tree_width * 0.6, 3 if crit else 2)
@@ -510,6 +650,7 @@ static func trees_in_fall_range(candidates: Array, x: float, dir: int, height: f
 
 
 func _begin_fall(t: Node2D, dir: int, chain_id: int) -> void:
+	Sound.play("crack")
 	t.start_fall(dir, chain_id)
 	t.z_index = 1
 	_standing -= 1
@@ -524,8 +665,6 @@ func _begin_fall(t: Node2D, dir: int, chain_id: int) -> void:
 	if n >= 2:
 		_hud.show_chain_popup(n)
 		chain_grew.emit(n)
-		if story_enabled and n >= 5:
-			Story.notify("chain", {"n": n})
 		if n == chain_happy or n == chain_wow or (n > chain_wow and n % 4 == 0):
 			_cat.emote("wow" if n >= chain_wow else "happy", 1.6)
 
@@ -537,10 +676,18 @@ func _on_landed(t: Node2D) -> void:
 	# Logs and chain length are counted from the same event (the trunk hitting the ground),
 	# so a tree still in the air at payout time is in neither.
 	logs[t.tree_id] = int(logs.get(t.tree_id, 0)) + int(t.def.get("logs", 1))
+	if chapter_mode and t.has_meta("chapter_slot"):
+		chapter_cleared[int(t.get_meta("chapter_slot"))] = true
+		_update_chapter_hud()
 	trees_felled += 1
 	var landed: int = int(chain_landed.get(t.chain_id, 0)) + 1
 	chain_landed[t.chain_id] = landed
 	longest_chain = maxi(longest_chain, landed)
+	Sound.play("land")
+	if landed == chain_happy or landed == chain_wow or (landed > chain_wow and landed % chain_wow == 0):
+		Sound.play("chain")
+	if story_enabled and landed >= 5:
+		Story.notify("chain", {"n": landed})
 	var dmg: float = t.tree_height * GameState.stat("fall_power") * fall_mult
 	for victim in trees_in_fall_range(trees, t.position.x, t.fall_dir, t.tree_height):
 		victim.take_damage(dmg, -t.fall_dir)
@@ -561,6 +708,9 @@ func _on_landed(t: Node2D) -> void:
 func end_run() -> void:
 	if phase != Phase.RUNNING:
 		return
+	if not manual_mode and not _autoplay and get_tree().paused:
+		set_paused(false)
+	_axe.target = cursor_screen()
 	# A swing already under way delivers its contact before the run is closed.
 	_axe.flush_impact()
 	phase = Phase.ENDING
@@ -581,12 +731,14 @@ func _complete() -> void:
 		# Autoplay/screenshot runs never touch GameState or the save: preview only.
 		result = _preview_result()
 	else:
-		result = GameState.apply_run_result(logs, longest_chain, trees_felled, elapsed)
+		result = GameState.apply_run_result(logs, longest_chain, trees_felled, elapsed, _chapter_result())
 	var total: float = float(result.get("total", 0.0))
+	_hud.set_values(time_left, total, longest_chain)
 	var kind: String = ForestHud.reaction_for_total(total)   # judged against earlier runs, before this one is recorded
 	if not _autoplay:
 		ForestHud.record_total(total)
 	_hud.show_results(result, kind)
+	Sound.play("result")
 	if kind == "happy":
 		_cat.cheer()
 	_last_result = result
@@ -607,13 +759,28 @@ func _story_busy() -> bool:
 
 func _preview_result() -> Dictionary:
 	var payout := Balance.run_payout(logs, longest_chain)
-	return {"logs": logs.duplicate(), "longest_chain": longest_chain, "trees_felled": trees_felled,
+	var result := {"logs": logs.duplicate(), "longest_chain": longest_chain, "trees_felled": trees_felled,
 		"duration": elapsed, "sales": payout.sales, "chain_bonus": payout.chain_bonus,
 		"total": payout.total, "gold_after": GameState.gold + payout.total}
+	if chapter_mode:
+		result.merge({"chapter_id": chapter_id, "chapter_name": chapter_def.name, "chapter_cleared": chapter_cleared.size(),
+			"chapter_total": int(chapter_def.tree_count), "chapter_complete": chapter_cleared.size() >= int(chapter_def.tree_count),
+			"chapter_next": Chapters.next_id(chapter_id), "chapter_replay": chapter_replay})
+	return result
+
+
+func _go_next_chapter() -> void:
+	if not _hud.results_ready or _story_busy() or not bool(_last_result.get("chapter_complete", false)):
+		return
+	var next := str(_last_result.get("chapter_next", ""))
+	if next.is_empty():
+		return
+	if GameState.select_chapter(next):
+		SceneTransition.go(get_tree(), "res://scenes/forest/forest.tscn")
 
 
 func _go_camp() -> void:
-	if _story_busy():
+	if not _hud.results_ready or _story_busy():
 		return   # a dialog is open (or about to reopen between beats): the button must not fire
 	if ResourceLoader.exists(CAMP_SCENE):
 		SceneTransition.go(get_tree(), CAMP_SCENE)
@@ -665,6 +832,7 @@ func _save_shot() -> void:
 	var img := get_viewport().get_texture().get_image()
 	var err := img.save_png(_autoshot_path)
 	print("autoshot: ", _autoshot_path, " err=", err)
+	await Sound.drain()
 	get_tree().quit()
 
 
@@ -692,4 +860,5 @@ func _seq_run() -> void:
 		while _seq_acc < _seq_interval:
 			await get_tree().process_frame
 	Engine.time_scale = 1.0
+	await Sound.drain()
 	get_tree().quit()

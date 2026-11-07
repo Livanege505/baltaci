@@ -43,6 +43,7 @@ var _skip: Button
 var _emote: TextureRect
 var _emote_bubble: Panel
 var _letter: Control = null
+var _card: TextureRect = null
 var _hint: Label
 
 var _typed := 0.0
@@ -310,6 +311,7 @@ func _next_line() -> void:
 		_close(false)
 		return
 	var l: Dictionary = lines[line_idx]
+	Sound.play("page")
 	var who := str(l.get("who", ""))
 	var ch: Dictionary = chars.get(who, {})
 	if who != _cur_who:
@@ -328,6 +330,32 @@ func _next_line() -> void:
 	_last_input = Time.get_ticks_msec() / 1000.0
 	state = S.TYPING
 	_set_emote(str(l.get("emote", "")))
+	_show_card(str(l.get("show", "")))
+
+
+func _show_card(art_id: String) -> void:
+	if _card != null:
+		_card.queue_free()
+		_card = null
+	if art_id.is_empty():
+		return
+	var tex := Art.tex(art_id)
+	if tex == null:
+		return
+	_card = TextureRect.new()
+	_card.texture = tex
+	_card.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_card.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_card.size = Vector2(360, 300)
+	_card.position = Vector2(620, 180)
+	_card.pivot_offset = _card.size * 0.5
+	_card.scale = Vector2.ONE * 0.75
+	_card.modulate.a = 0.0
+	add_child(_card)
+	var tween := _card.create_tween().set_parallel(true)
+	tween.tween_property(_card, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_card, "modulate:a", 1.0, 0.2)
 
 
 func _enter_waiting() -> void:
@@ -366,6 +394,7 @@ func _pop_portrait() -> void:
 
 
 func _close(skipped: bool) -> void:
+	_show_card("")
 	state = S.CLOSING
 	_dim.mouse_filter = Control.MOUSE_FILTER_STOP   # stay solid until fully gone
 	_hint.visible = false
@@ -384,6 +413,7 @@ func _close(skipped: bool) -> void:
 
 
 func _cleanup() -> void:
+	_show_card("")
 	if _letter != null:
 		_letter.queue_free()
 		_letter = null

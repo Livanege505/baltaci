@@ -18,6 +18,8 @@ var runs: int = 0
 var last_run: Dictionary = {}     # see CONTRACT.md "Run result"
 var flags: Dictionary = {}        # story/progress flags: ASCII key -> bool/int/float/String
 var max_depth: int = 0            # deepest forest column reached in any run
+var chapter_progress: Dictionary = {}   # chapter id -> landed tree slots
+var selected_chapter: String = ""
 
 
 ## Persisted flag helpers (story beats, one-time hints). Values must be JSON-safe primitives.
@@ -39,7 +41,24 @@ func note_depth(col: int) -> void:
 
 
 func _ready() -> void:
+	if _read_only_launch(OS.get_cmdline_user_args(), OS.get_cmdline_args()):
+		persist = false
 	load_game()
+
+
+static func _read_only_launch(user_args: PackedStringArray, engine_args: PackedStringArray) -> bool:
+	# Preview flags are known before autoloads run. Keep recovery read-only too: a
+	# corrupt real save must never be renamed while taking a screenshot.
+	for arg in user_args:
+		if arg == "--no-save" or arg.begins_with("--autoshot") or arg.begins_with("--autoplay"):
+			return true
+	# Test/simulator scripts override their save path after autoload initialization.
+	# Until then even recovery of a corrupt real save must remain read-only.
+	for arg in engine_args:
+		var path := arg.replace("\\", "/")
+		if path.ends_with(".gd") and (path.contains("/tests/") or path.begins_with("tests/") or path.ends_with("tools/sim_balance.gd")):
+			return true
+	return false
 
 
 func stat(name: String) -> float:
@@ -70,7 +89,11 @@ func buy(id: String) -> bool:
 
 ## Called by the forest scene when a run ends. Computes payout from the same data the
 ## results screen shows, so displayed and credited gold can never diverge.
-func apply_run_result(logs: Dictionary, longest_chain: int, trees_felled: int, duration: float) -> Dictionary:
+func apply_run_result(logs: Dictionary, longest_chain: int, trees_felled: int, duration: float, chapter_run: Dictionary = {}) -> Dictionary:
+	logs = Balance.sanitize_logs(logs)
+	trees_felled = mini(_count(trees_felled), _count(logs.values().reduce(func(sum, value): return sum + value, 0)))
+	longest_chain = mini(_count(longest_chain), trees_felled)
+	duration = maxf(0.0, duration) if is_finite(duration) else 0.0
 	var payout := Balance.run_payout(logs, longest_chain)
 	gold += payout.total
 	best_chain = max(best_chain, longest_chain)
@@ -85,19 +108,24 @@ func apply_run_result(logs: Dictionary, longest_chain: int, trees_felled: int, d
 		"total": payout.total,
 		"gold_after": gold,
 	}
+	# The payout and checkpoint share the same atomic save, preventing paid trees from respawning.
+	if not chapter_run.is_empty():
+		last_run.merge(_record_chapter(chapter_run))
 	save_game()
 	changed.emit()
 	return last_run
 
 
 func to_dict() -> Dictionary:
-	return {"save_version": Balance.save_version, "gold": gold, "levels": levels,
-		"best_chain": best_chain, "runs": runs, "flags": flags, "max_depth": max_depth}
+	return {"save_version": Balance.save_version, "gold": gold, "levels": levels.duplicate(true),
+		"best_chain": best_chain, "runs": runs, "flags": flags.duplicate(true), "max_depth": max_depth,
+		"chapter_progress": chapter_progress.duplicate(true), "selected_chapter": selected_chapter}
 
 
 ## Loads a state dict defensively: wrong types or out-of-range numbers fall back to safe values.
 func from_dict(d: Dictionary) -> void:
 	d = _migrate(d)
+	last_run = {}
 	gold = 0.0
 	var g = d.get("gold", 0.0)
 	if _is_number(g) and is_finite(float(g)):
@@ -113,6 +141,10 @@ func from_dict(d: Dictionary) -> void:
 	best_chain = _count(d.get("best_chain", 0))
 	runs = _count(d.get("runs", 0))
 	max_depth = _count(d.get("max_depth", 0))
+	chapter_progress = Chapters.sanitize_progress(d.get("chapter_progress", {}))
+	selected_chapter = str(d.get("selected_chapter", Chapters.first_id()))
+	if not Chapters.is_unlocked(selected_chapter, chapter_progress):
+		selected_chapter = Chapters.first_id()
 	flags = {}
 	var fl = d.get("flags", {})
 	if typeof(fl) == TYPE_DICTIONARY:
@@ -120,6 +152,36 @@ func from_dict(d: Dictionary) -> void:
 			var t := typeof(fl[k])
 			if t == TYPE_BOOL or t == TYPE_STRING or (_is_number(fl[k]) and is_finite(float(fl[k]))):
 				flags[str(k)] = fl[k]
+
+
+func select_chapter(id: String) -> bool:
+	if not Chapters.is_unlocked(id, chapter_progress):
+		return false
+	selected_chapter = id
+	save_game()
+	changed.emit()
+	return true
+
+
+func _record_chapter(run: Dictionary) -> Dictionary:
+	var id := str(run.get("id", ""))
+	var chapter := Chapters.get_chapter(id)
+	if chapter.is_empty() or not Chapters.is_unlocked(id, chapter_progress):
+		return {}
+	var was_complete := Chapters.is_complete(id, chapter_progress)
+	var landed := Chapters.sanitize_slots(id, run.get("cleared", []))
+	var slots: Array = chapter_progress.get(id, []).duplicate()
+	for slot in landed:
+		if not slots.has(slot):
+			slots.append(slot)
+	slots.sort()
+	chapter_progress[id] = slots
+	var complete := slots.size() >= int(chapter.tree_count)
+	var replay := bool(run.get("replay", false)) and was_complete
+	return {"chapter_id": id, "chapter_name": chapter.name, "chapter_cleared": landed.size() if replay else slots.size(),
+		"chapter_total": int(chapter.tree_count), "chapter_complete": landed.size() >= int(chapter.tree_count) if replay else complete,
+		"chapter_newly_completed": complete and not was_complete, "chapter_replay": replay,
+		"chapter_next": Chapters.next_id(id) if complete else ""}
 
 
 static func _is_number(v) -> bool:
@@ -164,17 +226,24 @@ func save_game() -> void:
 ## .tmp / .bak is used instead.
 func load_game() -> void:
 	var data = _read_dict(save_path)
-	if data == null and FileAccess.file_exists(save_path):
+	if data == null and persist and FileAccess.file_exists(save_path):
 		var corrupt := save_path.get_basename() + ".corrupt." + save_path.get_extension()
 		DirAccess.remove_absolute(_abs(corrupt))
 		var err := DirAccess.rename_absolute(_abs(save_path), _abs(corrupt))
 		push_warning("save file unreadable, moved to %s (err %d)" % [corrupt, err])
 	if data == null:
-		data = _read_dict(save_path + ".tmp")
-	if data == null:
-		data = _read_dict(save_path + ".bak")
-	if data != null:
-		from_dict(data)
+		var newest_time := -1
+		# A temp file represents an interrupted save, but an abandoned older temp
+		# must not roll back a newer backup. On equal timestamps prefer the temp.
+		for suffix in [".tmp", ".bak"]:
+			var candidate = _read_dict(save_path + suffix)
+			if candidate == null:
+				continue
+			var modified := FileAccess.get_modified_time(save_path + suffix)
+			if modified > newest_time:
+				data = candidate
+				newest_time = modified
+	from_dict(data if data != null else {})
 	changed.emit()
 
 
@@ -200,7 +269,9 @@ func reset() -> void:
 
 ## Upgrade old save dicts step by step. Add a branch per version bump.
 func _migrate(d: Dictionary) -> Dictionary:
-	var v := int(d.get("save_version", 1))
+	d = d.duplicate(true)
+	var raw_version = d.get("save_version", 1)
+	var v := maxi(1, _count(raw_version))
 	# if v < 2: ... ; v = 2
 	d["save_version"] = v
 	return d

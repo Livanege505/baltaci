@@ -34,7 +34,14 @@ Statlar (`GameState.stat`): `axe_damage`, `swing_interval` (sn), `crit_chance` (
 ## Run result (`GameState.last_run`)
 `{logs:{tree_id:int}, longest_chain:int, trees_felled:int, duration:float, sales:float, chain_bonus:float, total:float, gold_after:float}`
 
-## Oynanış kuralları (dikey dilim)
+## Güncel bölüm yapısı
+- Kullanıcı isteğiyle oynanabilir orman artık `data/chapters.json` içindeki beş sonlu bölüme ayrılmıştır. `Chapters` autoload'u `GameState`'ten önce yüklenir; bölüm kataloğu ve saf doğrulama/kilit kurallarını sağlar.
+- `GameState.chapter_progress` bölüm kimliğinden yere inmiş ağaç slotlarının listesine gider; `selected_chapter` seçimi saklar. `apply_run_result(..., chapter_run = {})` ödeme ile bu slotları tek kayıtta yazar. Eski dört argümanlı çağrılar geçerlidir. Eski altın, geliştirme, hikâye ve derinlik kayıtları korunur.
+- `Forest.begin_chapter(id)` sabit yerleşimi kurar; eski slotlar yalnız kütük olarak çizilir. Tamamlanan bölüm yeniden oynandığında yerel hedef sıfırdan başlar, kalıcı tamamlanma silinmez.
+- Üstteki `chapter_map.gd` mevcut bölüm ilerlemesini gösterir; kamptaki aynı bileşen açık bölümleri seçtirir. Tamamlama, havadaki ağaçları değil yere inen ağaçları sayar. Sonuç paneli sonraki bölüme geçişi sunar.
+- Aşağıdaki eski sonsuz orman kuralları manuel test ve denge simülasyonu için korunur; normal oyun bölüm sınırında üretimi/kamerayı durdurur. Sonlu haritada bitmemiş ağaçlar kameranın gerisinde kaldıkları için silinmez.
+
+## Önceki sonsuz orman kuralları (test/simülasyon)
 - Orman yandan görünüş ve **sonsuz**: kamera önünde `forest.buffer_columns` sütun üretilir, çok gerideki ağaçlar silinir. Ağaçlar aralarında `spacing_min..max` px, kökler `ground_y`'de. Sütun indeksi büyüdükçe (sağa) `Balance.pick_tree` daha değerli türler verir. Kamera yatay kayar (fare ekran kenarına yaklaşınca + oyuncu sağa ilerledikçe).
 - Balta imleci fareyi takip eder, `swing_interval` aralıkla **otomatik** sallanır. İmlecin altındaki ayakta duran ağaca `axe_damage` vurur (`crit_chance` ile ×`crit_multiplier`). İmleç ağaç gövdesinin x aralığında (±genişlik/2 + tolerans) ve kök ile tepe arasında olmalı.
 - **Devrilme:** can ≤ 0 → ağaç, imlecin gövdeye göre hangi taraftan vurduğunun **tersine** devrilir (soldan vurulan sağa düşer). Kökü pivot alıp ~0.6 sn'de yere iner (ivmelenerek). Yere değdiğinde düşme yönünde kök x'i `(x, x + yön·height]` aralığındaki ayakta ağaçlara `height × fall_power` hasar verir. Onlar ölürse **aynı yöne** devrilir → zincir. Zincir uzunluğu = aynı ilk devrilmeden doğan toplam devrilen ağaç. "Zincir x3!" uçan yazısı. Turun en uzun zinciri `longest_chain`.

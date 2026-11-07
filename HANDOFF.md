@@ -26,7 +26,7 @@ godot --path . res://scenes/forest/forest.tscn -- --autoshot=/abs/out.png   # ne
 ```
 On the cloud VM: download the Linux build of Godot 4.7.2 (standard, not .NET) and use `--headless`. Screenshot modes need a display; try `xvfb-run` if available, otherwise skip visual checks and say so.
 
-Status at handoff: `run_all` **6/6 PASS** (smoke, economy, economy_fmt, forest, juice, story).
+Current status: `run_all` **11/11 PASS** (smoke, audio, chapters, controls, economy, economy_fmt, economy_safety, forest, juice, story, story_ui). The playable forest is now a five-chapter finite campaign; see `docs/BOLUMLER-VE-HARITA.md`. Manual-mode forest tests and the balance simulator retain their endless layout unless `begin_chapter()` is called explicitly. `GameState` saves chapter checkpoints in the same transaction as payouts. `Chapters` is loaded before GameState and has no dependency on it. `Sound` uses short wood taps instead of the removed door-like creak files.
 
 ## Rules
 - Tests must never write the real save. Use `GameState.save_path` override / `GameState.persist = false`, and `Story.ui_enabled = false` in tests.
@@ -35,7 +35,7 @@ Status at handoff: `run_all` **6/6 PASS** (smoke, economy, economy_fmt, forest, 
 - Missing art must never crash (`Art.tex()` returns null, so draw a placeholder).
 - Write tests with expected values computed by hand in advance.
 
-## Open work (the integration pass was stopped midway; verify each)
+## Previous integration checklist (completed in the control/economy pass)
 1. **Story hooks**: already present in `camp.gd` (`camp_enter`) and `forest.gd` (`depth`, `tree_first_seen`, `chain`, `run_end`). Verify against INTEGRATION.md:
    - the run_end dialog opens after the results reveal and blocks "Kampa Dön" while open;
    - camp_enter plays after the scene transition;
@@ -48,7 +48,9 @@ Status at handoff: `run_all` **6/6 PASS** (smoke, economy, economy_fmt, forest, 
    - (d) Pipsy's result reaction should be relative to the player's own history (an EMA in a GameState flag), not the absolute 60/20 gold.
    - (e) Cap log/dust/leaf clutter in long chains.
    Some of these may be partially done; check the code.
-4. Add tests for 2 and 3(d). Keep `run_all` green.
+4. Map-card and personal-reaction tests are now in `tests/test_story_ui.gd`. Control, pause, clock, exploration and landed-chain quest regressions are in `tests/test_controls.gd`. All nine test scripts pass.
+
+The items above have been checked or completed. Story success now uses landed links rather than airborne trees; exploration uses actually reached trees rather than generated buffer columns. Controls are in the `Settings` autoload and `data/controls.json`; the shared menu is `scenes/ui/settings_panel.gd`. Preference saves remain separate from progression.
 
 ## Later roadmap (see the design doc in the owner's vault, `Oduncu-GDD.md`)
 Week 2: skill tree + XP/levels. Week 3: sawmill (hızar) + order board + nursery (fidanlık) + helpers + offline progress (8 h cap). Week 4: special objects (lightning tree, beehive, bird nest, rotten stump, rock, mushroom ring) + Steam (GodotSteam). Week 5: Steam page + demo. The game's name is undecided.

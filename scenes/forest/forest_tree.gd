@@ -68,6 +68,14 @@ func is_standing() -> bool:
 	return state == State.STANDING
 
 
+func restore_stump() -> void:
+	state = State.GONE
+	hp = 0.0
+	if _body != null:
+		_body.visible = false
+	queue_redraw()
+
+
 ## Returns true when this hit kills the tree.
 func take_damage(amount: float, hit_side: int) -> bool:
 	hp -= amount
@@ -178,9 +186,9 @@ func _draw() -> void:
 	if state == State.STANDING:
 		# Contact shadow: tight dark core + wider soft skirt, so the trunk sits on the grass.
 		draw_set_transform(Vector2(0, 4), 0.0, Vector2(1.0, 0.24))
-		draw_circle(Vector2.ZERO, tree_width * 2.0, Color(0.05, 0.1, 0.02, 0.1))
-		draw_circle(Vector2.ZERO, tree_width * 1.35, Color(0.04, 0.07, 0.02, 0.2))
-		draw_circle(Vector2.ZERO, tree_width * 0.8, Color(0.03, 0.04, 0.01, 0.32))
+		draw_circle(Vector2.ZERO, tree_width * 2.0, Color(0.04, 0.04, 0.04, 0.07))
+		draw_circle(Vector2.ZERO, tree_width * 1.35, Color(0.04, 0.04, 0.04, 0.12))
+		draw_circle(Vector2.ZERO, tree_width * 0.8, Color(0.04, 0.04, 0.04, 0.2))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		return
 	var stump_tex := Art.tex("trees/%s_stump" % tree_id)

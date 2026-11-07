@@ -2,7 +2,7 @@ extends Control
 ## Camp hub: top bar, upgrade bench ("Balta Tezgahı"), mascot, start button, settings.
 ## All UI is built in code from Balance.upgrades so new upgrades appear without scene edits.
 
-signal sfx_requested(sfx_name: String)   # placeholder hook for the audio layer
+signal sfx_requested(sfx_name: String)
 
 const Fmt := preload("res://scenes/ui/fmt.gd")
 const UiTheme := preload("res://scenes/ui/ui_theme.gd")
@@ -12,6 +12,8 @@ const CatPlaceholder := preload("res://scenes/camp/cat_placeholder.gd")
 const Juice := preload("res://scenes/ui/juice.gd")
 const CoinBurst := preload("res://scenes/ui/coin_burst.gd")
 const SceneTransition := preload("res://scenes/ui/scene_transition.gd")
+const SettingsPanel := preload("res://scenes/ui/settings_panel.gd")
+const ChapterMap := preload("res://scenes/ui/chapter_map.gd")
 
 const FOREST_SCENE := "res://scenes/forest/forest.tscn"
 const THEME_PATH := "res://scenes/ui/theme.tres"
@@ -49,13 +51,17 @@ var _hop_tw: Tween
 var _idle_tw: Tween
 var _coin_target: Control            # card the paying coins are flying to
 var _card_punch_tw: Tween
+var _chapter_map: Control
+var _chapter_hint: Label
 
 
 func _ready() -> void:
+	sfx_requested.connect(Sound.play)
+	Sound.set_ambience(true)
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	theme = load(THEME_PATH) if ResourceLoader.exists(THEME_PATH) else UiTheme.build()
 	var args := _parse_args()
-	if args.has("autoshot") or args.has("autoshot-gold") or args.has("autoshot-toast"):
+	if args.has("autoshot") or args.has("autoshot-gold") or args.has("autoshot-toast") or args.has("autoshot-buy"):
 		GameState.persist = false   # preview runs never write the real save
 	if args.has("autoshot-gold"):
 		GameState.gold = float(args["autoshot-gold"])   # in-memory only
@@ -64,6 +70,7 @@ func _ready() -> void:
 	_build_backdrop()
 	_build_cat()
 	_build_top_bar()
+	_build_chapter_map()
 	_build_bench()
 	_build_start_button()
 	_build_toast()
@@ -90,6 +97,26 @@ func _ready() -> void:
 
 
 # ---------------------------------------------------------------- building
+
+func _build_chapter_map() -> void:
+	_chapter_map = ChapterMap.new()
+	_chapter_map.interactive = true
+	_chapter_map.position = Vector2(40, 108)
+	_chapter_map.size = Vector2(780, 200)
+	_chapter_map.chapter_selected.connect(func(id: String) -> void:
+		if not Story.is_playing() and not _settings_overlay.visible and not _transition_busy():
+			GameState.select_chapter(id))
+	add_child(_chapter_map)
+	_chapter_hint = Label.new()
+	_chapter_hint.position = Vector2(60, 320)
+	_chapter_hint.size = Vector2(740, 82)
+	_chapter_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_chapter_hint.add_theme_font_size_override("font_size", 21)
+	_chapter_hint.add_theme_color_override("font_color", Color("f8ecd2"))
+	_chapter_hint.add_theme_color_override("font_outline_color", Color("30251c"))
+	_chapter_hint.add_theme_constant_override("outline_size", 4)
+	_chapter_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_chapter_hint)
 
 func _build_backdrop() -> void:
 	var bd := Backdrop.new()
@@ -309,45 +336,11 @@ func _build_toast() -> void:
 
 
 func _build_settings() -> void:
-	_settings_overlay = Control.new()
-	_settings_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_settings_overlay = SettingsPanel.new()
 	_settings_overlay.visible = false
+	_settings_overlay.closed.connect(func() -> void: _settings_overlay.visible = false)
+	_settings_overlay.reset_requested.connect(func() -> void: _confirm.popup_centered())
 	add_child(_settings_overlay)
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.55)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_settings_overlay.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_settings_overlay.add_child(center)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = 440.0
-	center.add_child(panel)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 14)
-	panel.add_child(box)
-	var title := Label.new()
-	title.theme_type_variation = "TitleLabel"
-	title.text = "Ayarlar"
-	box.add_child(title)
-	var note := Label.new()
-	note.theme_type_variation = "DimLabel"
-	note.text = "İlerleme otomatik kaydedilir."
-	box.add_child(note)
-	var reset := Button.new()
-	reset.theme_type_variation = "DangerButton"
-	reset.text = "İlerlemeyi Sıfırla"
-	reset.focus_mode = Control.FOCUS_NONE
-	reset.pressed.connect(func() -> void: _confirm.popup_centered())
-	box.add_child(reset)
-	Juice.button(reset, 1.04, 0.95)
-	var close := Button.new()
-	close.theme_type_variation = "WoodButton"
-	close.text = "Kapat"
-	close.focus_mode = Control.FOCUS_NONE
-	close.pressed.connect(func() -> void: _settings_overlay.visible = false)
-	box.add_child(close)
-	Juice.button(close, 1.04, 0.95)
 
 	_confirm = ConfirmationDialog.new()
 	_confirm.theme = theme
@@ -362,6 +355,10 @@ func _build_settings() -> void:
 # ---------------------------------------------------------------- state -> UI
 
 func _refresh(delay: float = 0.0) -> void:
+	_chapter_map.set_state(GameState.selected_chapter, GameState.chapter_progress)
+	var chapter := Chapters.get_chapter(GameState.selected_chapter)
+	_chapter_hint.text = str(chapter.get("hint", "")) + "\nKesilen ağaçlar vardiya sonunda kaydedilir."
+	_start_button.text = "Bölümü Tekrar Oyna" if Chapters.is_complete(GameState.selected_chapter, GameState.chapter_progress) else "Bölüme Başla"
 	_chain_label.text = "En uzun zincir: %d" % GameState.best_chain
 	_runs_label.text = "Vardiya: %d" % GameState.runs
 	_count_gold_to(GameState.gold, delay)
@@ -541,6 +538,8 @@ func _notify_camp_enter() -> void:
 	if not is_inside_tree():
 		return
 	await get_tree().create_timer(0.6).timeout
+	while is_inside_tree() and _settings_overlay.visible:
+		await get_tree().process_frame
 	if not is_inside_tree() or _transition_busy():
 		return   # already leaving again
 	Story.notify("camp_enter", {"runs": GameState.runs, "gold": GameState.gold, "best_chain": GameState.best_chain,
@@ -553,6 +552,8 @@ func _transition_busy() -> bool:
 
 
 func _on_start() -> void:
+	if Story.is_playing() or not Story.queue.is_empty() or _settings_overlay.visible or _transition_busy():
+		return
 	if not ResourceLoader.exists(FOREST_SCENE):
 		_message_label.text = "Orman henüz hazır değil, birazdan açılacak."
 		return
@@ -562,13 +563,18 @@ func _on_start() -> void:
 
 
 func _open_settings() -> void:
+	if Story.is_playing() or not Story.queue.is_empty() or _transition_busy():
+		return
 	_settings_overlay.visible = true
 
 
 func _on_reset_confirmed() -> void:
 	GameState.reset()
+	Story.queue.clear()
+	Story.reset_story()
 	_settings_overlay.visible = false
 	_show_toast("İlerleme sıfırlandı.")
+	_notify_camp_enter.call_deferred()
 
 
 func _show_last_run_toast() -> void:
@@ -609,4 +615,5 @@ func _run_autoshot() -> void:
 	var img := get_viewport().get_texture().get_image()
 	var err := img.save_png(_autoshot_path)
 	print("autoshot: ", _autoshot_path, " -> ", error_string(err))
+	await Sound.drain()
 	get_tree().quit(0 if err == OK else 1)

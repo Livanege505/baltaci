@@ -1,0 +1,12 @@
+{
+  "edge_scroll": true,
+  "auto_follow": true,
+  "scroll_speed": 1.0,
+  "cursor_smoothing": 0.25,
+  "auto_chop": true,
+  "screen_shake": true,
+  "master_volume": 0.75,
+  "sfx_volume": 0.8,
+  "ambience_volume": 0.4,
+  "audio_muted": false
+}

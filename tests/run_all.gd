@@ -39,8 +39,7 @@ func _initialize() -> void:
 			failed.append(s)
 			print(text)
 		else:
-			for line in text.split("
-"):
+			for line in text.split("\n"):
 				if line.begins_with("TEST_") or line.begins_with("SMOKE"):
 					print("      ", line.strip_edges())
 	print("---")
@@ -53,12 +52,11 @@ func _initialize() -> void:
 ## A test passes when it printed its "<NAME> OK" summary and no FAIL / script error lines.
 func _log_passed(text: String) -> bool:
 	var summary_ok := false
-	for line in text.split("
-"):
+	for line in text.split("\n"):
 		var l := line.strip_edges()
 		if (l.begins_with("TEST_") or l.begins_with("SMOKE")) and l.contains(" OK"):
 			summary_ok = true
-		if l.begins_with("FAIL ") or l.begins_with("  FAIL ") or l.contains("SCRIPT ERROR") or l.contains("Parse Error"):
+		if l.begins_with("FAIL ") or l.begins_with("ERROR:") or l.contains("SCRIPT ERROR") or l.contains("Parse Error"):
 			return false
 		if (l.begins_with("TEST_") or l.begins_with("SMOKE")) and l.contains(" FAIL"):
 			return false

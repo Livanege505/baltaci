@@ -1,11 +1,12 @@
 extends SceneTree
 ## Perfect-aim bot balance simulator (headless). Never touches the real save.
-## Run: ~/bin/godot --headless --path . -s tools/sim_balance.gd [-- table|progress|all]
+## Run: godot --headless --path . -s tools/sim_balance.gd -- table|progress|all [--samples=12]
 ## Bot: every swing hits the leftmost standing tree from its left side, so trees fall forward
 ## and chain. `skip` = swings the player loses repositioning after each felled tree.
 
 var G
 var B
+var sample_count := 60
 
 
 func _initialize() -> void:
@@ -14,9 +15,15 @@ func _initialize() -> void:
 	B = root.get_node("Balance")
 	G.save_path = "user://sim_save.json"
 	G.persist = false
+	var settings := root.get_node("Settings")
+	settings.persist = false
+	settings.set_value("auto_chop", true)   # deterministic even if the player uses manual chopping
 	var mode := "all"
 	for a in OS.get_cmdline_user_args():
-		mode = a
+		if a in ["table", "progress", "all"]:
+			mode = a
+		elif a.begins_with("--samples="):
+			sample_count = maxi(1, int(a.trim_prefix("--samples=")))
 	if mode == "table" or mode == "all":
 		_table()
 	if mode == "progress" or mode == "all":
@@ -45,7 +52,7 @@ func _table() -> void:
 			var fel := 0.0
 			var ch := 0.0
 			var secs := 0.0
-			var n := 60
+			var n := sample_count
 			for seed in n:
 				var r := run_once(c[1], seed + 1, skip)
 				golds.append(r.total)
@@ -71,38 +78,53 @@ func run_once(levels: Dictionary, seed: int, skip_after_kill: int) -> Dictionary
 	G.from_dict({"levels": levels})
 	var f: Node2D = (load("res://scenes/forest/forest.tscn") as PackedScene).instantiate()
 	f.manual_mode = true
-	f.swing_enabled = false
+	f.swing_enabled = true
+	f.virtual_cursor_active = true
 	f.layout_seed = seed
 	root.add_child(f)
 	f.time_left = G.stat("run_time")
 	var dt := 1.0 / 60.0
 	var t := 0.0
-	var next_hit := 0.534
-	var skip := 0
-	var iv: float = G.stat("swing_interval")
+	var bot := {"skip": 0, "target": null}
+	# Forest's impact handler is already connected. Observe its result afterwards
+	# so the skipped contacts model time lost moving to the next target.
+	f._axe.impact.connect(func() -> void:
+		if bot.skip > 0:
+			bot.skip -= 1
+		elif is_instance_valid(bot.target) and not bot.target.is_standing():
+			bot.skip = skip_after_kill
+	)
 	while f.phase != f.Phase.DONE and t < 300.0:
-		if f.phase == f.Phase.RUNNING and t >= next_hit:
-			next_hit += iv
-			if skip > 0:
-				skip -= 1
-			else:
-				var tgt = null
+		var tgt = null
+		for tr in f.trees:
+			if tr.is_standing():
+				tgt = tr
+				break
+		if tgt == null or tgt.position.x > f._next_x - 1500.0:
+			f.ensure_forest((tgt.position.x if tgt else f._next_x) + 2500.0)
+			if tgt == null:
 				for tr in f.trees:
 					if tr.is_standing():
 						tgt = tr
 						break
-				if tgt == null or tgt.position.x > f._next_x - 1500.0:
-					f.ensure_forest((tgt.position.x if tgt else f._next_x) + 2500.0)
-					if tgt == null:
-						for tr in f.trees:
-							if tr.is_standing():
-								tgt = tr
-								break
-				var before: int = f.standing_count()
-				f.strike_at(Vector2(tgt.position.x - 5.0 - f.cam_x, 700.0))
-				if f.standing_count() < before:
-					skip = skip_after_kill
-		f.advance(dt)
+		bot.target = tgt
+		if tgt != null:
+			f.cam_x = maxf(0.0, tgt.position.x - 800.0)
+			f.virtual_cursor = Vector2(tgt.position.x - 5.0 - f.cam_x, tgt.position.y - tgt.tree_height * 0.25) + f._shake_off
+		if bot.skip > 0:
+			f.virtual_cursor = Vector2(-1000, -1000)
+		# Use the same swing/contact, hit-stop and real-time clock as a live run.
+		# Perfect aiming snaps the blade; skip=1 loses one contact on each kill.
+		f._axe.position = f.virtual_cursor
+		f._axe.target = f.virtual_cursor
+		var sdt := dt
+		if f._hitstop_t > 0.0:
+			f._hitstop_t -= dt
+			sdt *= f.hitstop_scale
+		f._axe.tick(sdt, dt)
+		f.advance(sdt, dt)
+		f._fx.tick(sdt)
+		f._cull_behind()
 		t += dt
 	var r2 := {"total": float(G.last_run.get("total", 0.0)), "felled": f.trees_felled, "chain": f.longest_chain, "secs": t}
 	# GameState.apply_run_result adds to gold/runs in memory only (persist=false).

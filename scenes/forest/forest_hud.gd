@@ -5,6 +5,7 @@ extends CanvasLayer
 
 signal paydos_pressed
 signal camp_pressed
+signal next_chapter_pressed
 signal results_revealed   # the results panel finished its count-up (story beats may open now)
 
 ## Pipsy's result reaction is relative to the player's own history (GameState flags, JSON-safe floats).
@@ -39,6 +40,7 @@ static func record_total(total: float) -> void:
 
 const Fmt := preload("res://scenes/ui/fmt.gd")
 const Juice := preload("res://scenes/ui/juice.gd")
+const ChapterMap := preload("res://scenes/ui/chapter_map.gd")
 
 const INK := Color("#2b1a0e")
 const WOOD := Color("#a8693a")
@@ -67,6 +69,9 @@ var _time_punch: float = 0.0
 var _chain_value: int = 0
 var _chain_punch: float = 0.0
 var _gold_primed := false
+var _target_label: Label
+var results_ready := false
+var _chapter_map: Control
 
 
 func _ready() -> void:
@@ -103,16 +108,21 @@ func _build() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
-	# Time (top centre)
-	var time_panel := _pill(root, Control.PRESET_CENTER_TOP, Vector2(-100, 10), Vector2(200, 104))
+	_chapter_map = ChapterMap.new()
+	_chapter_map.position = Vector2(300, 10)
+	_chapter_map.size = Vector2(1090, 150)
+	root.add_child(_chapter_map)
+	_chapter_map.visible = false
+	# Clock sits under Paydos, leaving the entire upper route visible.
+	var time_panel := _pill(root, Control.PRESET_CENTER_TOP, Vector2(610, 88), Vector2(170, 70))
 	var tbox := HBoxContainer.new()
 	tbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	tbox.add_theme_constant_override("separation", 8)
 	time_panel.add_child(tbox)
 	var clock := Art.tex("ui/clock")
 	if clock:
-		tbox.add_child(_icon(clock, 44))
-	_time_label = _label("0", 68, CREAM)
+		tbox.add_child(_icon(clock, 28))
+	_time_label = _label("0", 42, CREAM)
 	tbox.add_child(_time_label)
 	_time_label.resized.connect(func() -> void: _time_label.pivot_offset = _time_label.size * 0.5)
 
@@ -170,6 +180,26 @@ func _build() -> void:
 	_banner.pivot_offset = Vector2(350, 60)
 	_banner.modulate.a = 0.0
 	root.add_child(_banner)
+	_target_label = _label("Fareyle gövdeye nişan al · Balta otomatik vurur · A/D: ilerle · ESC: duraklat", 22, CREAM)
+	_target_label.position = Vector2(400, 835)
+	_target_label.size = Vector2(1160, 50)
+	_target_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	root.add_child(_target_label)
+
+
+func set_chapter(id: String, cleared: int, is_replay: bool) -> void:
+	_chapter_map.visible = true
+	_chapter_map.set_state(id, GameState.chapter_progress, cleared, is_replay)
+
+
+func set_target(target: Node2D, hit_x: float) -> void:
+	if target == null:
+		_target_label.text = "Fareyle gövdeye nişan al · %s · A/D: ilerle · ESC: duraklat" % ("Otomatik vuruş" if bool(Settings.value("auto_chop")) else "Sol fareyi basılı tut")
+		_target_label.add_theme_color_override("font_color", CREAM)
+		return
+	var dir := "→" if hit_x < target.position.x else "←"
+	_target_label.text = "%s  ·  Can: %d / %d  ·  Devrilme: %s" % [str(target.def.get("name", target.tree_id)), ceili(target.hp), int(target.def.get("hp", 0)), dir]
+	_target_label.add_theme_color_override("font_color", GOLD)
 
 
 func set_values(time_left: float, gold: float, chain: int) -> void:
@@ -233,6 +263,8 @@ func show_banner(text: String) -> void:
 
 ## Results panel; every number comes from GameState.last_run.
 func show_results(run: Dictionary, reaction: String = "") -> void:
+	results_ready = false
+	_target_label.visible = false
 	_paydos.visible = false
 	_results_root = Control.new()
 	_results_root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -266,7 +298,11 @@ func show_results(run: Dictionary, reaction: String = "") -> void:
 	panel.add_child(vb)
 
 	var cells: Array = []     # [Control, row_index] revealed one row after another
-	var title := _label("Vardiya Bitti", 48, GOLD)
+	var chapter_complete := bool(run.get("chapter_complete", false))
+	var title_text := "Vardiya Bitti"
+	if chapter_complete:
+		title_text = "Bölüm Tamamlandı!" if not str(run.get("chapter_next", "")).is_empty() else "Harita Tamamlandı!"
+	var title := _label(title_text, 48, GOLD)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(title)
 	cells.append([title, 0])
@@ -274,6 +310,18 @@ func show_results(run: Dictionary, reaction: String = "") -> void:
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(sub)
 	cells.append([sub, 1])
+	if run.has("chapter_id"):
+		var chapter_info := "%s · %d/%d ağaç" % [str(run.get("chapter_name", "")), int(run.get("chapter_cleared", 0)), int(run.get("chapter_total", 0))]
+		if not chapter_complete:
+			chapter_info += "\nİlerlemen kaydedildi; sonraki vardiyada devam et."
+		elif not str(run.get("chapter_next", "")).is_empty():
+			chapter_info += "\nSonraki bölüm hazır!"
+		else:
+			chapter_info += "\nTüm bölümler açık. İstediğin bölümü yeniden oyna."
+		var chapter_label := _label(chapter_info, 22, Color("bde7a4"))
+		chapter_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vb.add_child(chapter_label)
+		cells.append([chapter_label, 2])
 	vb.add_child(HSeparator.new())
 
 	var grid := GridContainer.new()
@@ -283,7 +331,7 @@ func show_results(run: Dictionary, reaction: String = "") -> void:
 	vb.add_child(grid)
 	var logs: Dictionary = run.get("logs", {})
 	var any := false
-	var row := 2
+	var row := 3 if run.has("chapter_id") else 2
 	for id in Balance.tree_order:
 		var cnt := int(logs.get(id, 0))
 		if cnt <= 0:
@@ -323,16 +371,27 @@ func show_results(run: Dictionary, reaction: String = "") -> void:
 	bal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(bal)
 	cells.append([bal, row + 1])
+	if chapter_complete and not str(run.get("chapter_next", "")).is_empty():
+		var next_button := Button.new()
+		next_button.text = "Sonraki Bölüm →"
+		next_button.disabled = true
+		next_button.custom_minimum_size = Vector2(0, 58)
+		next_button.focus_mode = Control.FOCUS_NONE
+		_style_button(next_button, Color("4e8f3a"), 28)
+		next_button.pressed.connect(func() -> void: next_chapter_pressed.emit())
+		vb.add_child(next_button)
+		cells.append([next_button, row + 2])
 
 	var btn := Button.new()
 	btn.text = "Kampa Dön"
+	btn.disabled = true
 	btn.custom_minimum_size = Vector2(0, 62)
 	btn.focus_mode = Control.FOCUS_NONE
 	_style_button(btn, Color("#4e8f3a"), 30)
 	btn.pressed.connect(func(): camp_pressed.emit())
 	vb.add_child(btn)
 	Juice.button(btn, 1.04, 0.95)
-	cells.append([btn, row + 2])
+	cells.append([btn, row + 3])
 
 	_results_root.modulate.a = 1.0
 	for c in cells:
@@ -360,7 +419,12 @@ func _animate_results(panel: PanelContainer, cells: Array, total: Label, bal: La
 	ctw.tween_method(func(v: float) -> void: total.text = "Toplam: +%s altın" % Fmt.num(v), 0.0, total_val, 0.85).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	ctw.tween_callback(func() -> void: Juice.pop(total, 1.18, 0.3))
 	ctw.tween_interval(0.55)   # let the pop settle before anything opens over the panel
-	ctw.tween_callback(func() -> void: results_revealed.emit())
+	ctw.tween_callback(func() -> void:
+		results_ready = true
+		for c in cells:
+			if c[0] is Button:
+				c[0].disabled = false
+		results_revealed.emit())
 	var btw := create_tween()
 	btw.tween_interval(t0)
 	btw.tween_method(func(v: float) -> void: bal.text = "Yeni bakiye: %s altın" % Fmt.num(v), bal_val - total_val, bal_val, 0.85).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)

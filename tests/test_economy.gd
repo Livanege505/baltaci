@@ -25,6 +25,7 @@ func _initialize() -> void:
 	var saved_state: Dictionary = _gs.to_dict()
 	var old_path: String = _gs.save_path
 	_gs.save_path = SAVE_PATH
+	_gs.persist = true   # enable file tests only after selecting the isolated path
 	_wipe_test_files()
 
 	_test_costs()
@@ -52,17 +53,17 @@ func _initialize() -> void:
 func _test_costs() -> void:
 	# id: [level0, level1, level5]
 	var want := {
-		"axe_damage": [10, 14, 47],         # 10, 13.6->14, 10*1.36^5=46.53
+		"axe_damage": [10, 13, 37],         # 10, 13, 10*1.3^5=37.1293
 		"swing_interval": [15, 23, 114],    # 15, 22.5->23, 15*1.5^5=113.9
 		"run_time": [40, 60, 304],          # 40, 60, 40*1.5^5=303.75
-		"fall_power": [140, 224, 1468],     # 140, 224, 140*1.6^5=1468.0
-		"crit_chance": [220, 352, 2307],    # 220, 352, 220*1.6^5=2306.9
+		"fall_power": [140, 217, 1253],     # 140, 217, 140*1.55^5=1252.525
+		"crit_chance": [60, 90, 456],       # 60, 90, 60*1.5^5=455.625
 	}
 	for id in want:
 		var lv := [0, 1, 5]
 		for i in 3:
 			_eq("cost %s lv%d" % [id, lv[i]], _bal.upgrade_cost(id, lv[i]), float(want[id][i]))
-	_eq("cost axe lv2", _bal.upgrade_cost("axe_damage", 2), 18.0)   # 18.496
+	_eq("cost axe lv2", _bal.upgrade_cost("axe_damage", 2), 17.0)   # 16.9
 	_eq("cost unknown", _bal.upgrade_cost("nope", 0), INF)
 
 
@@ -76,12 +77,12 @@ func _test_stats() -> void:
 	_near("swing lv12", _bal.compute_stat("swing_interval", {"swing_interval": 12}), 0.22)
 	_near("swing level past max is clamped to max_level", _bal.compute_stat("swing_interval", {"swing_interval": 99}), 0.22)
 	_ok("swing never below the floor", _bal.compute_stat("swing_interval", {"swing_interval": 99}) >= 0.18)
-	_near("axe past max clamps to lv25", _bal.compute_stat("axe_damage", {"axe_damage": 99}), 80.0)
+	_near("axe past max clamps to lv29", _bal.compute_stat("axe_damage", {"axe_damage": 99}), 92.0)
 	_near("negative level clamps to 0", _bal.compute_stat("axe_damage", {"axe_damage": -4}), 5.0)
 	_near("run_time lv5", _bal.compute_stat("run_time", {"run_time": 5}), 35.0)
 	_near("run_time lv15", _bal.compute_stat("run_time", {"run_time": 15}), 65.0)
-	_near("fall lv5", _bal.compute_stat("fall_power", {"fall_power": 5}), 0.11)
-	_near("fall lv15", _bal.compute_stat("fall_power", {"fall_power": 15}), 0.23)
+	_near("fall lv5", _bal.compute_stat("fall_power", {"fall_power": 5}), 0.105)
+	_near("fall lv15", _bal.compute_stat("fall_power", {"fall_power": 15}), 0.215)
 	_near("crit lv0", _bal.compute_stat("crit_chance", {}), 0.0)
 	_near("crit lv1", _bal.compute_stat("crit_chance", {"crit_chance": 1}), 0.04)
 	_near("crit lv10", _bal.compute_stat("crit_chance", {"crit_chance": 10}), 0.4)
@@ -92,21 +93,21 @@ func _test_stats() -> void:
 
 
 func _test_buy() -> void:
-	_gs.from_dict({"gold": 300.0})
+	_gs.from_dict({"gold": 200.0})
 	var changed_count := [0]
 	var cb := func() -> void: changed_count[0] += 1
 	_gs.changed.connect(cb)
 	_ok("buy axe #1", _gs.buy("axe_damage"))
-	_near("gold after axe #1", _gs.gold, 290.0)
+	_near("gold after axe #1", _gs.gold, 190.0)
 	_eq("axe level 1", _gs.level_of("axe_damage"), 1)
 	_ok("buy axe #2", _gs.buy("axe_damage"))
-	_near("gold after axe #2", _gs.gold, 276.0)    # 290 - 14
+	_near("gold after axe #2", _gs.gold, 177.0)    # 190 - 13
 	_eq("axe level 2", _gs.level_of("axe_damage"), 2)
 	_near("axe stat after 2 buys", _gs.stat("axe_damage"), 11.0)
 	_ok("buy crit", _gs.buy("crit_chance"))
-	_near("gold after crit", _gs.gold, 56.0)       # 276 - 220
-	_ok("cannot buy fall_power (140 > 56)", not _gs.buy("fall_power"))
-	_near("gold unchanged on failure", _gs.gold, 56.0)
+	_near("gold after crit", _gs.gold, 117.0)      # 177 - 60
+	_ok("cannot buy fall_power (140 > 117)", not _gs.buy("fall_power"))
+	_near("gold unchanged on failure", _gs.gold, 117.0)
 	_eq("fall_power level unchanged", _gs.level_of("fall_power"), 0)
 	_eq("changed fired once per successful buy", changed_count[0], 3)
 	_gs.changed.disconnect(cb)
@@ -114,10 +115,10 @@ func _test_buy() -> void:
 
 
 func _test_buy_limits() -> void:
-	_gs.from_dict({"gold": 1.0e12, "levels": {"axe_damage": 25}})
-	_ok("maxed axe reports maxed", _bal.is_maxed("axe_damage", 25))
+	_gs.from_dict({"gold": 1.0e12, "levels": {"axe_damage": 29}})
+	_ok("maxed axe reports maxed", _bal.is_maxed("axe_damage", 29))
 	_ok("cannot buy past max", not _gs.buy("axe_damage"))
-	_eq("level stays 25", _gs.level_of("axe_damage"), 25)
+	_eq("level stays 29", _gs.level_of("axe_damage"), 29)
 	_near("gold untouched at max", _gs.gold, 1.0e12)
 	_gs.from_dict({"gold": 1.0e12, "levels": {"run_time": 14}})
 	_ok("buy last run_time level", _gs.buy("run_time"))
@@ -184,7 +185,7 @@ func _test_validation() -> void:
 	_gs.from_dict({"gold": NAN})
 	_near("nan gold -> 0", _gs.gold, 0.0)
 	_gs.from_dict({"levels": {"axe_damage": 100, "run_time": -3, "swing_interval": "7", "bogus": 4, "crit_chance": 3.9}})
-	_eq("level clamped to max", _gs.level_of("axe_damage"), 25)
+	_eq("level clamped to max", _gs.level_of("axe_damage"), 29)
 	_eq("negative level -> 0", _gs.level_of("run_time"), 0)
 	_eq("string level dropped", _gs.level_of("swing_interval"), 0)
 	_ok("unknown upgrade dropped", not _gs.levels.has("bogus"))
@@ -193,7 +194,7 @@ func _test_validation() -> void:
 	_eq("negative runs -> 0", _gs.runs, 0)
 	_eq("huge best_chain clamped", _gs.best_chain, 2000000000)
 	_gs.from_dict({"levels": {"axe_damage": 1000000000}})
-	_near("absurd level cannot inflate stat", _gs.stat("axe_damage"), 80.0)
+	_near("absurd level cannot inflate stat", _gs.stat("axe_damage"), 92.0)
 
 
 func _test_payout_cap() -> void:

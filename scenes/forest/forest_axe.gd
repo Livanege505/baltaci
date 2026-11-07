@@ -101,6 +101,9 @@ func _deliver_impact() -> void:
 	if not _impact_pending:
 		return
 	_impact_pending = false
+	# The contact pose and the actual hit share exactly the same pointer hotspot.
+	position = target
+	_prev_pos = position
 	_kick = Vector2(7.0, -10.0)
 	_punch = 1.0
 	if _phase == Phase.STRIKE or _phase == Phase.WINDUP:
@@ -129,13 +132,17 @@ func _rest_body_pos() -> Vector2:
 
 
 ## Advances the swing and the smoothed cursor following. `dt` may be hit-stop scaled.
-func tick(dt: float) -> void:
+func tick(dt: float, cursor_dt: float = -1.0) -> void:
 	if _body == null or dt <= 0.0:
 		return
 	_time += dt
+	if cursor_dt < 0.0:
+		cursor_dt = dt
 	var rate := follow_rate_strike if _phase == Phase.STRIKE else follow_rate
-	position = Juice.damp_v(position, target, rate, dt)
-	var vel_x := (position.x - _prev_pos.x) / dt
+	var smoothing := float(Settings.value("cursor_smoothing"))
+	rate *= lerpf(3.0, 0.45, smoothing)
+	position = target if is_zero_approx(smoothing) else Juice.damp_v(position, target, rate, cursor_dt)
+	var vel_x := (position.x - _prev_pos.x) / maxf(cursor_dt, 0.0001)
 	_prev_pos = position
 	_tilt = Juice.damp(_tilt, clampf(vel_x * 0.00022, -0.14, 0.14), 10.0, dt)
 
@@ -176,6 +183,15 @@ func tick(dt: float) -> void:
 	_body.position = _rest_body_pos() + _kick
 	_body.scale = Vector2(1.0 + 0.09 * _punch, 1.0 - 0.07 * _punch)
 	_age_trail(dt)
+	queue_redraw()
+
+
+func _draw() -> void:
+	# The aim mark follows the real pointer even while the decorative axe winds up.
+	var aim := target - position
+	draw_circle(aim, 7.0, Color(0.12, 0.08, 0.04, 0.65))
+	draw_arc(aim, 5.0, 0.0, TAU, 20, Color("fff1bb"), 1.5, true)
+	draw_circle(aim, 1.5, Color("fff1bb"))
 
 
 func _record_trail() -> void:

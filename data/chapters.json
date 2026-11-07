@@ -1,0 +1,81 @@
+{
+  "chapters": [
+    {
+      "id": "grove",
+      "name": "Kavak Korusu",
+      "short_name": "Kavak",
+      "tree_count": 12,
+      "depth_start": 0,
+      "seed": 113,
+      "color": "#a4c956",
+      "mix": {
+        "kavak": 1.0
+      },
+      "hint": "Gövdenin soluna nişan al; ağaçlar sağa devrilerek zincir başlatsın.",
+      "sky_tint": "#fff9ee"
+    },
+    {
+      "id": "pines",
+      "name": "Çam Patikası",
+      "short_name": "Çam",
+      "tree_count": 18,
+      "depth_start": 12,
+      "seed": 227,
+      "color": "#69ae72",
+      "mix": {
+        "kavak": 0.55,
+        "cam": 0.45
+      },
+      "hint": "Çamlar daha dayanıklı. Kamptaki balta geliştirmelerini kullan.",
+      "sky_tint": "#efffed"
+    },
+    {
+      "id": "ridge",
+      "name": "Ladin Yamacı",
+      "short_name": "Ladin",
+      "tree_count": 24,
+      "depth_start": 30,
+      "seed": 349,
+      "color": "#79b6b2",
+      "mix": {
+        "kavak": 0.2,
+        "cam": 0.6,
+        "ladin": 0.2
+      },
+      "hint": "İlk ladinlere ulaştın. Zayıflayan ağaçları aynı yöne devir.",
+      "sky_tint": "#e8f2ff"
+    },
+    {
+      "id": "valley",
+      "name": "Sisli Vadi",
+      "short_name": "Sisli Vadi",
+      "tree_count": 30,
+      "depth_start": 54,
+      "seed": 463,
+      "color": "#a19bc7",
+      "mix": {
+        "kavak": 0.1,
+        "cam": 0.4,
+        "ladin": 0.5
+      },
+      "hint": "Uzun zincirler için devrilme gücünü geliştir. Her kesilen ağaç kaydedilir.",
+      "sky_tint": "#e2e8ff"
+    },
+    {
+      "id": "oak_path",
+      "name": "Altın Meşe Yolu",
+      "short_name": "Altın Yol",
+      "tree_count": 36,
+      "depth_start": 84,
+      "seed": 587,
+      "color": "#e6b75e",
+      "mix": {
+        "kavak": 0.05,
+        "cam": 0.25,
+        "ladin": 0.7
+      },
+      "hint": "Son durak! Bu yolu temizleyerek orman haritasını tamamla.",
+      "sky_tint": "#fff0cb"
+    }
+  ]
+}

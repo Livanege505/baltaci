@@ -3,6 +3,8 @@ extends Control
 ## placeholder: warm sky, sun, clouds, two hill layers, pine silhouettes, meadow and dirt yard.
 
 const GROUND_FROM_BOTTOM := 200.0
+@export var mid_scale: float = 0.6
+@export var mid_opacity: float = 0.72
 
 
 func _init() -> void:
@@ -83,7 +85,13 @@ func _draw_hills(w: float, gy: float) -> void:
 	else:
 		_hill(w, gy - 80, 150, 0.0042, 1.2, Color("8fb59a"))
 	if mid != null:
-		_layer(mid, w, gy, 20.0)
+		# Smaller, translucent trees sit behind Pipsy rather than towering over the camp.
+		var tile_w := w * mid_scale
+		var tile_h := float(mid.get_height()) * tile_w / float(mid.get_width())
+		var x := 0.0
+		while x < w:
+			draw_texture_rect(mid, Rect2(x, gy - tile_h + 20.0, tile_w, tile_h), false, Color(0.94, 0.98, 1.0, mid_opacity))
+			x += tile_w
 		return
 	_hill(w, gy - 30, 110, 0.0058, 3.1, Color("5f9068"))
 	var rng := RandomNumberGenerator.new()

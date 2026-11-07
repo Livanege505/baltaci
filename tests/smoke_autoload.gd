@@ -7,7 +7,7 @@ func _initialize() -> void:
 	var fails := 0
 	fails += _eq("tree_order", B.tree_order, ["kavak", "cam", "ladin"])
 	fails += _eq("axe_damage lv2", B.compute_stat("axe_damage", {"axe_damage": 2}), 11.0)
-	fails += _eq("cost axe lv3", B.upgrade_cost("axe_damage", 3), 25.0)   # 10*1.36^3=25.16
+	fails += _eq("cost axe lv3", B.upgrade_cost("axe_damage", 3), 22.0)   # 10*1.3^3=21.97
 	fails += _eq("swing at max level", B.compute_stat("swing_interval", {"swing_interval": 99}), 0.22)   # clamped to lv12
 	var p = B.run_payout({"kavak": 10, "cam": 2}, 3)                     # sales 20+18=38, bonus 38*2*0.05=3.8->4
 	fails += _eq("payout", [p.sales, p.chain_bonus, p.total], [38.0, 4.0, 42.0])

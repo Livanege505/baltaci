@@ -1,0 +1,24 @@
+{
+  "world_voices": 8,
+  "ui_voices": 3,
+  "limiter_ceiling_db": -2.0,
+  "ambience": {
+    "file": "res://audio/ambience/forest_ambience.mp3",
+    "volume_db": -12.0,
+    "fade_seconds": 1.0
+  },
+  "cues": {
+    "hit": {"files": ["chop.ogg", "impactWood_medium_000.ogg", "impactWood_medium_001.ogg", "impactWood_medium_002.ogg"], "volume_db": -10.0, "pitch_min": 0.94, "pitch_max": 1.06, "group": "axe", "interval": 0.08},
+    "crit": {"files": ["impactWood_heavy_000.ogg", "impactWood_heavy_001.ogg"], "volume_db": -7.0, "pitch_min": 1.02, "pitch_max": 1.1, "group": "axe", "interval": 0.08},
+    "swing": {"files": ["knifeSlice.ogg", "knifeSlice2.ogg"], "volume_db": -24.0, "pitch_min": 0.8, "pitch_max": 0.95, "interval": 0.14},
+    "crack": {"files": ["impactWood_medium_002.ogg"], "volume_db": -22.0, "pitch_min": 1.05, "pitch_max": 1.12, "interval": 0.16},
+    "land": {"files": ["impactWood_heavy_000.ogg", "impactWood_heavy_001.ogg", "impactWood_heavy_002.ogg"], "volume_db": -9.0, "pitch_min": 0.7, "pitch_max": 0.88, "interval": 0.09},
+    "chain": {"files": ["pluck_001.ogg"], "volume_db": -16.0, "pitch_min": 1.05, "pitch_max": 1.2, "interval": 0.35},
+    "buy": {"files": ["handleCoins.ogg", "handleCoins2.ogg"], "volume_db": -7.0, "ui": true, "interval": 0.08},
+    "click": {"files": ["click_003.ogg"], "volume_db": -18.0, "ui": true, "interval": 0.07},
+    "start": {"files": ["confirmation_002.ogg"], "volume_db": -13.0, "ui": true, "interval": 0.3},
+    "result": {"files": ["confirmation_004.ogg"], "volume_db": -11.0, "ui": true, "interval": 0.5},
+    "close": {"files": ["back_002.ogg"], "volume_db": -18.0, "ui": true, "interval": 0.08},
+    "page": {"files": ["bookFlip1.ogg"], "volume_db": -22.0, "ui": true, "interval": 0.12}
+  }
+}

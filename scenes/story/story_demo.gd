@@ -90,4 +90,5 @@ func _run_shots() -> void:
 	t.show_line(Story.characters.get("hoca", {}), "hoca", "Bir ağaç ötekini itti! Bodo buna 'orman dansı' derdi.", "")
 	await _wait(0.8)
 	await _snap("toast")
+	await Sound.drain()
 	get_tree().quit(0)

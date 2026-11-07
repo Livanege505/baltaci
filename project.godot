@@ -18,6 +18,9 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 
 Balance="*res://scripts/autoload/balance.gd"
 Art="*res://scripts/autoload/art.gd"
+Settings="*res://scripts/autoload/settings.gd"
+Sound="*res://scripts/autoload/sound.gd"
+Chapters="*res://scripts/autoload/chapters.gd"
 GameState="*res://scripts/autoload/game_state.gd"
 Story="*res://scripts/autoload/story.gd"
 
@@ -25,8 +28,9 @@ Story="*res://scripts/autoload/story.gd"
 
 window/size/viewport_width=1600
 window/size/viewport_height=900
+window/size/window_width_override=1280
+window/size/window_height_override=720
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
 
 [rendering]
 
